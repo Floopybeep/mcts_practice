@@ -3,3 +3,5 @@ https://www.youtube.com/watch?v=LZ8-TSV3nMk&ab_channel=Jims
 https://gibberblot.github.io/rl-notes/single-agent/mcts.html
 https://wjml.tistory.com/2
 https://gibberblot.github.io/rl-notes/multi-agent/multi-agent-rl.html
+
+https://storage.googleapis.com/deepmind-media/DeepMind.com/Blog/alphazero-shedding-new-light-on-chess-shogi-and-go/alphazero_preprint.pdf

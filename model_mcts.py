@@ -2,10 +2,6 @@ import time
 import numpy as np
 import random
 import copy
-from collections import deque
-
-NO_ACTIONS_LEFT = 1
-GAME_FINISHED = 2
 
 '''
 Personal memo regarding MCTS here:
@@ -26,14 +22,10 @@ class MCTS_Node:
         self._number_of_visits = 0
         self._playerid = playerid
         self._is_fully_expanded = False
-        self._value = {-1: 0, 1: 0}
-        self._board = self._state.get_board()
+        self._value = {-1: 0, 0: 0, 1: 0}
 
     def get_state(self):
         return self._state
-
-    def get_parent(self):
-        return self._parent
 
     def get_value(self):
         return self._value[self._playerid] - self._value[-self._playerid]
@@ -59,9 +51,9 @@ class MCTS_Node:
 
     def backpropagate(self, result):
         self._number_of_visits += 1
-        self._value[self._playerid] += result
+        self._value[result] += 1
         if self._parent is not None:
-            self._parent.backpropagate(result * -1)
+            self._parent.backpropagate(result)
 
     def is_terminal_node(self):
         return True if self._state.is_state_terminated() else False
@@ -79,29 +71,12 @@ class MCTS_Node:
         ]
         return self._children[np.argmax(choices_weights)]
 
-    def best_child_weights(self, param_exploration):
-        choices_weights = [
-            (c.get_value() / c.num_of_visits()) + param_exploration * np.sqrt((2 * np.log(self._number_of_visits) / c.num_of_visits()))
-            for c in self._children
-        ]
-        return choices_weights
-
-
-    # def find_best_child(self):
-    #     best_value = -10
-    #     best_child = None
-    #     for child in self._children:
-    #         if child._value > best_value:
-    #             best_child = child
-    #             best_value = child._value
-    #     return best_child
-
 
 class MCTS_TicTacToe:
-    def __init__(self, board_length: int):
+    def __init__(self, board_length: int, win_length: int):
         self._board_length = board_length
-        # self._win_condition = win_length      # for simplicity
-        self._win_condition = board_length
+        self._win_condition = win_length      # for simplicity
+        # self._win_condition = board_length
         self._board = self.create_gameboard(self._board_length)
         self._last_moved = -1
         self._winner = None
@@ -118,41 +93,31 @@ class MCTS_TicTacToe:
         random.shuffle(legal_actions)
         return legal_actions
 
-    def will_move_terminate(self, move: np.ndarray, player_id: int):
-        """Check if game is terminated"""
-        # player id is -1 or 1
-        # check horizontal, vertical, diagonal
-        if np.all(self._board[:, move[1]] == player_id):
-            return True
-        if np.all(self._board[move[0], :] == player_id):
-            return True
-        if move[0] == move[1] or move[0] == self._board_length - move[1]:
-            if np.all(np.diagonal(self._board) == player_id) or np.all(np.fliplr(self._board).diagonal() == player_id):
-                return True
-        return False
-
     def is_state_terminated(self, board=None):
         """Check if current game state warrants termination"""
         if board is None:
             board = self._board
 
-        if (self._board == 0).sum() == 0:
+        if (board == 0).sum() == 0:
             self._winner = 0
             return True
 
         for player_id in [-1, 1]:
-            # Check horizontal, vertical
-            for i in range(self._board_length):
-                if np.all(self._board[:, i] == player_id):
-                    self._winner = player_id
-                    return True
-                if np.all(self._board[i, :] == player_id):
-                    self._winner = player_id
-                    return True
-            # Check diagonals
-            if np.all(np.diagonal(self._board) == player_id) or np.all(np.fliplr(self._board).diagonal() == player_id):
-                self._winner = player_id
-                return True
+            for k in range(self._board_length - self._win_condition):
+                for j in range(self._board_length - self._win_condition):
+                    sub_board = board[k:k+self._win_condition, j:j+self._win_condition]
+                    # Check horizontal, vertical
+                    for i in range(self._win_condition):
+                        if np.all(sub_board[:, i] == player_id):
+                            self._winner = player_id
+                            return True
+                        if np.all(sub_board[i, :] == player_id):
+                            self._winner = player_id
+                            return True
+                    # Check diagonals
+                    if np.all(np.diagonal(sub_board) == player_id) or np.all(np.fliplr(sub_board).diagonal() == player_id):
+                        self._winner = player_id
+                        return True
         return False
 
     def play_out(self, playerid):
@@ -196,9 +161,7 @@ class MCTS_TicTacToe:
         print(line)
 
     def update_board(self, playerid: int, move: tuple):
-        symbols = {1: "O ", -1: "X "}
-        # self._board[move[0]][move[1]] = symbols[playerid]
-        self._board[move[0]][move[1]] = playerid
+        self._board[move[0], move[1]] = playerid
 
     def get_next_state(self, pid, next_action):
         new_state = copy.deepcopy(self)
@@ -211,29 +174,27 @@ class MCTS:
         self.root = root_node
 
     def find_best_action(self, num_seconds=None, num_tries=None):
+        tries = 0
+        end_time = time.time() + num_seconds
         if num_tries is None:
             assert(num_seconds is not None)
-            end_time = time.time() + num_seconds
-            tries = 0
             while True:
                 next_node = self.policy()
-                reward = - next_node.rollout()
+                reward = next_node.rollout()
                 next_node.backpropagate(reward)
                 tries += 1
                 if time.time() > end_time:
                     break
-            best_child_weights = self.root.best_child_weights(param_exploration=0.)
             print(tries)
             return self.root.best_child(param_exploration=0.)
 
         else:
-            tries = 0
             while tries < num_tries:
                 next_node = self.policy()
-                reward = - next_node.rollout()
+                reward = next_node.rollout()
                 next_node.backpropagate(reward)
                 tries += 1
-            best_child_weights = self.root.best_child_weights(param_exploration=0.)
+            print(f"{time.time() - end_time: .4f} seconds")
             return self.root.best_child(param_exploration=0.)
 
     def policy(self):
@@ -251,13 +212,13 @@ if __name__ == "__main__":
     24/09/29: Trying to see if the shit works...? I implemented most of the stuff from the worked example
     '''
     pid = 1
-    state = MCTS_TicTacToe(board_length=3)
+    state = MCTS_TicTacToe(board_length=4, win_length=3)
     state.print_board()
 
     while not state.is_state_terminated():
         player = MCTS_Node(playerid=pid, state=state)
         MCTS_set = MCTS(player)
-        best_child = MCTS_set.find_best_action(num_seconds=5)
+        best_child = MCTS_set.find_best_action(num_seconds=20, num_tries=30000)
 
         state = best_child.get_state()
         # state.update_board(pid, best_child)
@@ -265,4 +226,23 @@ if __name__ == "__main__":
 
         pid *= -1
 
-    print(f"Winner is: Player {state.get_winner()}")
+    dict_winner = {-1: "Player 2", 0: "A Tie", 1: "Player 1"}
+
+    print(f"Winner is: {dict_winner[state.get_winner()]}!")
+
+'''
+1. node and set is created
+2. from set, find best action
+    2.1. search next node based on policy (if not terminal node, return best child. if not expanded, return expansion)
+    2.2. rollout, and return reward to child node of root node
+    2.3. backpropagate from the child node
+    2.4. repeat 2.1-3 until time/tries run out
+3. repeat 1, 2 until termination is reached
+
+24/10/05
+Current problem: player 2 sucks at finding "winning" moves
+Possible reason: backpropagation and reward is wrong
+Solution: 
+1. changed reward system from node-based to pid-based (node has reward -> node has dict of reward)
+2. changed reward to +1 instead of +pid, and q-value to reward[pid] - reward[-pid] (I wonder if the same can be achieved by reward[pid] + reward[-pid] instead?
+'''
